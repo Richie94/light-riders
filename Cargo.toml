@@ -1,0 +1,8 @@
+[package]
+name = "lightriders-rust"
+version = "0.1.0"
+authors = ["Richard K."]
+
+[dependencies]
+libc = "0.2.26"
+rand = "0.3.18"
