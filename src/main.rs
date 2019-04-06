@@ -1,3 +1,5 @@
+extern crate core;
+
 mod board;
 mod bot;
 mod bots;

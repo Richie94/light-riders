@@ -19,7 +19,8 @@ pub struct Board {
     adjacents: HashMap<(u8, u8), HashSet<(u8, u8)>>,
     best_turn: Move,
     desired_depth: u8,
-    turn : i32,
+    turn: i32,
+    score_options: Vec<(Move, i32)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -33,6 +34,13 @@ pub enum Cell {
 impl Board {
     pub fn get_best_turn(&self) -> Move {
         self.best_turn
+    }
+    pub fn get_score_options(&self) -> Vec<(Move, i32)> {
+        self.score_options.clone()
+    }
+
+    pub fn reset_score_options(&mut self) {
+        self.score_options = vec![];
     }
 
     pub fn get_desired_depth(&self) -> u8 {
@@ -58,13 +66,48 @@ impl Board {
         self.get_cell(row, col) == Cell::Empty
     }
 
+    pub fn move_to_position(&self, chosen_move: Move, player_id: u8, reverse: bool) -> (u8, u8) {
+        let player = self.player_position[player_id as usize];
+        match chosen_move {
+            Move::Up => {
+                if !reverse {
+                    return (player.0 - 1, player.1);
+                } else {
+                    return (player.0 + 1, player.1);
+                }
+            }
+            Move::Down => {
+                if !reverse {
+                    return (player.0 + 1, player.1);
+                } else {
+                    return (player.0 - 1, player.1);
+                }
+            }
+            Move::Left => {
+                if !reverse {
+                    return (player.0, player.1 - 1);
+                } else {
+                    return (player.0, player.1 + 1);
+                }
+            }
+            Move::Right => {
+                if !reverse {
+                    return (player.0, player.1 + 1);
+                } else {
+                    return (player.0, player.1 - 1);
+                }
+            }
+            _ => return (0, 0)
+        }
+    }
+
     pub fn legal_moves(&self, player: u8) -> Vec<Move> {
         let (row, col) = self.player_position[player as usize];
 
         let mut moves = vec![];
 
         if !(Board::in_bounds(row, col)) {
-            return moves
+            return moves;
         }
 
         if col > 0 && self.b[row as usize][(col - 1) as usize] == Cell::Empty {
@@ -111,9 +154,8 @@ impl Board {
 
             self.adjacents.insert(point, adjacent_fields);
         }
-        let a: Option<&HashSet<(u8, u8)>> = self.adjacents.get(&point);
 
-        match a {
+        match self.adjacents.get(&point) {
             Some(a) => a.clone(),
             None => HashSet::new()
         }
@@ -133,7 +175,7 @@ impl Board {
 
         let mut max_value: i32 = -100000;
 
-        //legal_moves.sort_by(|a,b| )
+//        legal_moves.sort_by(|a,b| self.move_to_position(*a, player_id, false).0 <  self.move_to_position(*b, player_id, false).0)
 //
 //        // todo: sort moves
 //
@@ -148,9 +190,12 @@ impl Board {
                 max_value = value;
 
                 if depth == self.desired_depth {
-                    //writeln!(&mut stderr(), "Set best turn {}", chosen_move).expect("Stderr problem");
                     self.best_turn = chosen_move;
                 }
+            }
+
+            if depth == self.desired_depth {
+                self.score_options.push((chosen_move, value));
             }
 
             local_alpha = max(value, alpha);
@@ -160,7 +205,7 @@ impl Board {
             }
         }
 
-        self.get_score(player_id)
+        return max_value
     }
 
     pub fn get_score(&mut self, player_id: u8) -> i32 {
@@ -172,82 +217,51 @@ impl Board {
     pub fn get_amount_of_reachable_points_for_player(&mut self, player_id: u8) -> u32 {
         let start = Instant::now();
         let mut reachable_points: HashSet<(u8, u8)> = HashSet::new();
-        let mut node_edges: LinkedList<u32> = LinkedList::new();
+        let mut node_edges: Vec<u32> = vec![];
         let current_position = self.player_position[player_id as usize];
         //let mut newly_added = self.get_adjacent(current_position, true);
         let mut newly_added: HashSet<(u8, u8)> = self.get_adjacent(current_position, true);
 
-        let mut continue_loop: bool = true;
+        let mut loop_count = 0;
 
-        while continue_loop {
-            continue_loop = false;
-
-            for point in &newly_added {
-                reachable_points.insert(*point);
-            }
-
+        while newly_added.len() > 0 {
             let last_round_added = newly_added.clone();
             newly_added = HashSet::new();
 
-            for point in last_round_added {
-                let adjacent_to_point : HashSet<(u8, u8)> = self.get_adjacent(point, true);
+            for point in &last_round_added {
+                reachable_points.insert(*point);
+            }
+
+            for point in &last_round_added {
+                let adjacent_to_point: HashSet<(u8, u8)> = self.get_adjacent(*point, true);
                 let length: u32 = adjacent_to_point.len() as u32;
                 let value = (length / 2) + 1; // todo floor
-                node_edges.push_back(value);
+                node_edges.push(value);
 
-                for neighbour in adjacent_to_point {
-                    if !(reachable_points.contains(&neighbour)) {
-                        newly_added.insert(neighbour);
-                        continue_loop = true;
+                for adjacent_point in adjacent_to_point {
+                    loop_count = loop_count + 1;
+
+                    match reachable_points.get(&adjacent_point) {
+                        Some(a) => {}
+                        None => {
+                            newly_added.insert(adjacent_point);
+
+                        }
                     }
                 }
             }
         }
-        let result = node_edges.iter().sum();
-        //writeln!(&mut stderr(), "Scoring {}", result).expect("Stderr problem");
         let elapsed = start.elapsed();
-        let in_ms = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000;
-
-        writeln!(&mut stderr(), "Took {:?} ms", in_ms).expect("Stderr problem");
+        let in_ms = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 10000;
+        let result = node_edges.iter().sum();
+        writeln!(&mut stderr(), "Took {:?}ns, LC {}, Rslt: {}", in_ms, loop_count, result).expect("Stderr problem");
         result
     }
 
     // Executes a move (expects a legal move)
     pub fn execute_move(&mut self, next_move: Move, player_id: u8, reverse: bool) {
         let player = self.player_position[player_id as usize];
-        let mut delta;
-
-        match next_move {
-            Move::Up => {
-                if !reverse{
-                    delta = (player.0 - 1, player.1);
-
-                } else {
-                    delta = (player.0 + 1, player.1);
-                }
-            },
-            Move::Down => {
-                if !reverse {
-                    delta = (player.0 + 1, player.1);
-                } else {
-                    delta = (player.0 - 1, player.1);
-                }
-            },
-            Move::Left => {
-                if !reverse {
-                    delta = (player.0, player.1 - 1);
-                } else {
-                    delta = (player.0, player.1 + 1);
-                }
-            },
-            Move::Right => {
-                if !reverse {
-                    delta = (player.0, player.1 + 1);
-                } else {
-                    delta = (player.0, player.1 - 1);
-                }
-            },
-        }
+        let delta = self.move_to_position(next_move, player_id, reverse);
 
         if reverse {
             self.b[player.0 as usize][player.1 as usize] = Cell::Empty;
@@ -297,8 +311,9 @@ impl<'a> From<&'a str> for Board {
             player_position,
             adjacents,
             best_turn: Move::Up,
-            desired_depth: 4,
-            turn: 0
+            desired_depth: 2,
+            turn: 0,
+            score_options: vec![],
         }
     }
 }

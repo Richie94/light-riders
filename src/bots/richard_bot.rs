@@ -31,6 +31,7 @@ impl RichardBot {
 
 impl Bot for RichardBot {
 	fn get_move(&mut self) -> Move {
+		self.board.as_mut().unwrap().reset_score_options();
 		self.rng_state = (1664525 * self.rng_state + 1013904223) % 4294967296;
 		self.round = self.round + 1;
 		writeln!(&mut stderr(), "=== ROUND {} ===", self.round).expect("Stderr problem");
@@ -44,6 +45,7 @@ impl Bot for RichardBot {
 
 		let depth = self.board.as_ref().unwrap().get_desired_depth();
 		self.board.as_mut().unwrap().mini_max(self.id, depth, -10000, 10000);
+		writeln!(&mut stderr(), "Score Options: {:?}", self.board.as_ref().unwrap().get_score_options()).expect("Stderr problem");
 		self.board.as_mut().unwrap().get_best_turn()
 
 	}
