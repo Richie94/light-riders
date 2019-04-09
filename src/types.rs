@@ -1,9 +1,8 @@
 use std::time::Duration;
-use core::fmt;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Move {
-	Up, Down, Left, Right
+	Up, Down, Left, Right, Pass
 }
 
 #[derive(Clone, Debug)]

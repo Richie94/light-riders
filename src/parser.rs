@@ -33,14 +33,14 @@ impl<T: Bot> Parser<T> {
 	fn handle_action(&mut self, command: &Vec<&str>) {
 		let start = Instant::now();
 		match command[1] {
-			"move" => send_move(&self.bot.get_move()),
+			"move" => send_move(&self.bot.get_move(Duration::from_millis(command[2].parse::<u64>().unwrap()))),
 			_ => panic!(),
 		}
 
 		let elapsed = start.elapsed();
 		let in_ms = elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000;
 
-		writeln!(&mut stderr(), "Turn ended in {:?} ms", in_ms).expect("Stderr problem");
+		writeln!(&mut stderr(), "Turn ended in {:?} ms ({:?})", in_ms, command).expect("Stderr problem");
 	}
 
 	fn handle_update(&mut self, command: &Vec<&str>) {
@@ -89,6 +89,7 @@ fn send_move(m: &Move) {
 			Move::Down => "down",
 			Move::Left => "left",
 			Move::Right => "right",
+			Move::Pass => "pass"
 		}
 	);
 }
