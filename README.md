@@ -8,3 +8,7 @@ My score metric compares the amount of field I can reach first vs enemy can reac
 If the enemy is not reachable any more, my bot tries to keep as many adges as possible to survive long. 
 
 Every iteration the time is stopped and my search depth will be adjusted. So far it is tuned for timebank 10000 and time_per_move 200.
+
+## Build Instructions
+
+Run ```RUSTFLAGS="-Ctarget-cpu=native" cargo --release``` for getting the optimized program in the target/release folder. You can then just execute it in a local program like this [Ai Bot Workspace] (https://github.com/jmerle/ai-bot-workspace).
