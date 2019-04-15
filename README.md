@@ -11,4 +11,4 @@ Every iteration the time is stopped and my search depth will be adjusted. So far
 
 ## Build Instructions
 
-Run ```RUSTFLAGS="-Ctarget-cpu=native" cargo --release``` for getting the optimized program in the target/release folder. You can then just execute it in a local program like this [Ai Bot Workspace] (https://github.com/jmerle/ai-bot-workspace).
+Run ```RUSTFLAGS="-Ctarget-cpu=native" cargo build --release``` for getting the optimized program in the target/release folder. You can then just execute it in a local program like this [Ai Bot Workspace] (https://github.com/jmerle/ai-bot-workspace).
