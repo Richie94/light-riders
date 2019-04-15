@@ -7,7 +7,7 @@ use std::cmp::max;
 use std::time::Instant;
 use std::os::raw::c_float;
 
-const BLOCKED_VALUE: u8 = 100;
+const BLOCKED_VALUE: i32 = 100;
 
 #[derive(Clone, Debug)]
 pub struct Board {
