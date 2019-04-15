@@ -7,6 +7,8 @@ use std::cmp::max;
 use std::time::Instant;
 use std::os::raw::c_float;
 
+const BLOCKED_VALUE: u8 = 100;
+
 #[derive(Clone, Debug)]
 pub struct Board {
     b: [[Cell; 16]; 16],
@@ -160,7 +162,7 @@ impl Board {
         let mut legal_moves = self.legal_moves(player_id);
 
         if (depth < 1) | (legal_moves.len() < 1) {
-            return self.get_score(player_id, end_game).0;
+            return self.get_score(player_id, end_game).0 + (self.desired_depth - depth) as f64;
         }
 
         let player = self.player_position[player_id as usize];
@@ -202,7 +204,7 @@ impl Board {
 
         let mut depth_count = 0;
 
-        let mut distance_matrix  = [[100; 16]; 16];
+        let mut distance_matrix  = [[BLOCKED_VALUE; 16]; 16];
 
         while !newly_added.is_empty() {
             let last_round_added = newly_added.clone();
@@ -290,10 +292,14 @@ impl Board {
                 match adjacent_points {
                     Some(points) => {
                         if points.len() > 2 {
-                            cell_value = 1.1;
+                            cell_value += 0.1;
                         }
                     }
                     None => {}
+                }
+
+                if my_distances[col][row] == BLOCKED_VALUE || enemy_distances[col][row] == BLOCKED_VALUE {
+                    cell_value += 0.1;
                 }
 
                 if my_distances[col][row] < enemy_distances[col][row] {
@@ -302,7 +308,7 @@ impl Board {
                     my_score -= cell_value;
                 }
 
-                if we_can_meet == false && my_distances[col][row] < 100 && enemy_distances[col][row] < 100 {
+                if we_can_meet == false && my_distances[col][row] < BLOCKED_VALUE && enemy_distances[col][row] < BLOCKED_VALUE {
                     we_can_meet = true;
                 }
             }
