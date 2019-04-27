@@ -1,11 +1,11 @@
-use board::Board;
+use board::{Board, Cell};
 use bot::Bot;
 use std::time::*;
 use types::*;
 use std::io::{stderr, Write};
+use std::collections::HashMap;
 
 pub struct RichardBot {
-    rng_state: u64,
     board: Option<Board>,
     id: u8,
     round: u8,
@@ -13,16 +13,12 @@ pub struct RichardBot {
     current_depth: u8,
     max_depth: u8,
     timebank: Duration,
-    endgame_mode: bool,
+    transposition_table: HashMap<[[Cell; 16]; 16], f64>
 }
 
 impl RichardBot {
     pub fn new() -> Self {
         RichardBot {
-            rng_state: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
             board: None,
             id: 0,
             round: 0,
@@ -30,22 +26,21 @@ impl RichardBot {
             current_depth: 8,
             max_depth: 20,
             timebank: Duration::from_millis(0),
-            endgame_mode: false,
+            transposition_table: HashMap::new()
         }
     }
 
-    pub fn make_move_to_enemy(&mut self) -> Move {
+    pub fn make_move_to_middle(&mut self) -> Move {
         let mut legal_moves = self.board.as_mut().unwrap().legal_moves(self.id);
-        let enemy_position = self.board.as_mut().unwrap().get_player_position((self.id + 1) % 2);
 
         legal_moves.sort_by(|a, b| {
             let position_a = self.board.as_mut().unwrap().move_to_position(*a, self.id, false);
             let position_b = self.board.as_mut().unwrap().move_to_position(*b, self.id, false);
 
-            let dist_a_to_enemy = ((position_a.0 - enemy_position.0) as i8).abs() +
-                ((position_a.1 - enemy_position.1) as i8).abs();
-            let dist_b_to_enemy = ((position_b.0 - enemy_position.0) as i8).abs() +
-                ((position_b.1 - enemy_position.1) as i8).abs();
+            let dist_a_to_enemy = ((position_a.0 - 8) as i8).abs() +
+                ((position_a.1 - 8) as i8).abs();
+            let dist_b_to_enemy = ((position_b.0 - 8) as i8).abs() +
+                ((position_b.1 - 8) as i8).abs();
 
             dist_a_to_enemy.cmp(&dist_b_to_enemy)
         });
@@ -60,21 +55,17 @@ impl Bot for RichardBot {
         let before = Instant::now();
         self.round += 1;
         if self.round < 3 {
-            self.make_move_to_enemy()
+            self.make_move_to_middle()
         } else {
             let board = self.board.as_mut().unwrap();
 
-            if !self.endgame_mode && !board.get_score(self.id, false).1 {
-                self.endgame_mode = true;
-            }
-
             board.reset_score_options();
             board.set_best_turn(Move::Pass);
-            self.rng_state = (1664525 * self.rng_state + 1013904223) % 4294967296;
+            board.set_transpositions(self.transposition_table.clone());
             writeln!(&mut stderr(), "=== ROUND {} ===", self.round).expect("Stderr problem");
-            let mut chosen_move: Move;
+            board.get_territory(self.id, true);
             board.set_desired_depth(self.current_depth);
-            board.mini_max(self.id, self.current_depth, self.endgame_mode);
+            board.mini_max(self.id, self.current_depth);
 
             writeln!(&mut stderr(), "Score Options: {:?}", board.get_score_options()).expect("Stderr problem");
 
@@ -87,14 +78,14 @@ impl Bot for RichardBot {
             } else {
                 if self.current_depth > self.min_depth {
                     if elapsed > 1000 {
-                        self.current_depth /= 2;
+                        self.current_depth -= 4;
                     } else {
                         self.current_depth -= 1;
                     }
                 }
             }
             board.set_desired_depth(self.current_depth);
-
+            self.transposition_table = board.get_transpositions();
             board.get_best_turn()
         }
     }

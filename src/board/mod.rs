@@ -3,11 +3,6 @@ use types::Move;
 
 use std::collections::{HashMap, HashSet};
 use std::io::{stderr, Write};
-use std::cmp::max;
-use std::time::Instant;
-use std::os::raw::c_float;
-
-const BLOCKED_VALUE: i32 = 100;
 
 #[derive(Clone, Debug)]
 pub struct Board {
@@ -18,9 +13,10 @@ pub struct Board {
     desired_depth: u8,
     turn: i32,
     score_options: Vec<(Move, f64)>,
+    transposition_table: HashMap<[[Cell; 16]; 16], f64>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cell {
     Empty,
     Player0,
@@ -35,11 +31,19 @@ impl Board {
     pub fn set_best_turn(&mut self, turn: Move) {
         self.best_turn = turn;
     }
+
+    pub fn get_transpositions(&self) -> HashMap<[[Cell; 16]; 16], f64> {
+        self.transposition_table.clone()
+    }
+    pub fn set_transpositions(&mut self, trans: HashMap<[[Cell; 16]; 16], f64>) {
+        self.transposition_table = trans;
+    }
+
     pub fn get_score_options(&self) -> Vec<(Move, f64)> {
         self.score_options.clone()
     }
 
-    pub fn get_player_position(&self, player_id : u8) -> (u8, u8) {
+    pub fn get_player_position(&self, player_id: u8) -> (u8, u8) {
         self.player_position[player_id as usize]
     }
 
@@ -158,11 +162,87 @@ impl Board {
         }
     }
 
-    pub fn mini_max(&mut self, player_id: u8, depth: u8, end_game : bool) -> f64 {
+    pub fn get_territory(&mut self, player_id: u8, print: bool) -> f64 {
+        let enemy_id = ((player_id + 1) % 2) as usize;
+        let mut score_matrix = [[0.0; 16]; 16];
+        let mut my_new_cells = HashSet::new();
+        my_new_cells.insert(self.player_position[player_id as usize]);
+        let mut enemy_new_cells = HashSet::new();
+        enemy_new_cells.insert(self.player_position[enemy_id]);
+
+        while !my_new_cells.is_empty() || !enemy_new_cells.is_empty() {
+            let enemy_cells_last_round = enemy_new_cells.clone();
+            enemy_new_cells = HashSet::new();
+
+            for point in &enemy_cells_last_round {
+                if score_matrix[point.0 as usize][point.1 as usize] == 0.0 {
+                    let adjacent_to_point: HashSet<(u8, u8)> = self.get_adjacent(*point, true);
+                    let neighbour_count = adjacent_to_point.len();
+                    let point_score = -1.0 - (neighbour_count - 2) * 0.05;
+                    score_matrix[point.0 as usize][point.1 as usize] = point_score;
+                    for adjacent_point in adjacent_to_point {
+                        if score_matrix[adjacent_point.0 as usize][adjacent_point.1 as usize] == 0.0 {
+                            enemy_new_cells.insert(adjacent_point);
+                        }
+                    }
+                }
+            }
+
+            let my_cells_last_round = my_new_cells.clone();
+            my_new_cells = HashSet::new();
+
+            for point in &my_cells_last_round {
+                if score_matrix[point.0 as usize][point.1 as usize] == 0.0 {
+                    let adjacent_to_point: HashSet<(u8, u8)> = self.get_adjacent(*point, true);
+                    let neighbour_count = adjacent_to_point.len();
+                    let point_score = 1.0 + (neighbour_count - 2) * 0.05;
+                    score_matrix[point.0 as usize][point.1 as usize] = point_score;
+
+                    for adjacent_point in adjacent_to_point {
+                        if score_matrix[adjacent_point.0 as usize][adjacent_point.1 as usize] == 0.0 {
+                            my_new_cells.insert(adjacent_point);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut score = 0.0;
+        for col in 0..16 {
+            for row in 0..16 {
+                score += score_matrix[col][row];
+            }
+        }
+
+        if print {
+            writeln!(&mut stderr(), "score_matrix {:?}", score_matrix).expect("Stderr problem");
+        }
+
+        score
+    }
+
+    pub fn mini_max(&mut self, player_id: u8, depth: u8) -> f64 {
         let mut legal_moves = self.legal_moves(player_id);
 
-        if (depth < 1) | (legal_moves.len() < 1) {
-            return self.get_score(player_id, end_game).0 + (self.desired_depth - depth) as f64;
+        // if we have that situation in our transposition table
+        if self.transposition_table.contains_key(&self.b) {
+            //writeln!(&mut stderr(), "used transp table in depth {}", depth).expect("Stderr problem");
+            match self.transposition_table.get(&self.b) {
+                Some(a) => a,
+                None => &0.0
+            };
+        }
+
+        if (depth == 0) | (legal_moves.len() == 0) {
+            let mut score = self.get_score(player_id);
+            //writeln!(&mut stderr(), "player {} depth {} score {} legal moves: {}", player_id, depth, score, legal_moves.len()).expect("Stderr problem");
+            if legal_moves.len() == 0 {
+                score -= 1000.0;
+            }
+
+            let return_score = score + (self.desired_depth - depth) as f64;
+            self.transposition_table.insert(self.b, return_score);
+            return return_score;
         }
 
         let player = self.player_position[player_id as usize];
@@ -172,12 +252,7 @@ impl Board {
         while !legal_moves.is_empty() {
             let chosen_move = legal_moves.remove(0);
             self.execute_move(chosen_move, player_id, false);
-            let mut value : f64;
-            if end_game {
-                value = self.mini_max(player_id, depth - 1, end_game);
-            } else {
-                value = -self.mini_max((player_id + 1) % 2, depth - 1, end_game);
-            }
+            let value: f64 = -self.mini_max((player_id + 1) % 2, depth - 1);
             self.execute_move(chosen_move, player_id, true);
 
             if value > max_value {
@@ -192,64 +267,21 @@ impl Board {
                 self.score_options.push((chosen_move, value));
             }
         }
-
+        self.transposition_table.insert(self.b, max_value);
         return max_value;
-    }
-
-    pub fn get_metrics(&mut self, current_position: (u8, u8)) -> ([[i32; 16]; 16], u32) {
-        let mut reachable_points: HashSet<(u8, u8)> = HashSet::new();
-        reachable_points.insert(current_position);
-        let mut node_edges: Vec<u32> = vec![];
-        let mut newly_added: HashSet<(u8, u8)> = self.get_adjacent(current_position, true);
-
-        let mut depth_count = 0;
-
-        let mut distance_matrix  = [[BLOCKED_VALUE; 16]; 16];
-
-        while !newly_added.is_empty() {
-            let last_round_added = newly_added.clone();
-            depth_count += 1;
-            newly_added = HashSet::new();
-
-            for point in &last_round_added {
-                reachable_points.insert(*point);
-            }
-
-            for point in &last_round_added {
-                let adjacent_to_point: HashSet<(u8, u8)> = self.get_adjacent(*point, true);
-                let length: u32 = adjacent_to_point.len() as u32;
-                let value = (length as c_float / 2.0) + 1 as c_float;
-                //node_edges.push(value.floor() as u32);
-
-                for adjacent_point in adjacent_to_point {
-                    distance_matrix[adjacent_point.0 as usize][adjacent_point.1 as usize] = depth_count;
-                    match reachable_points.get(&adjacent_point) {
-                        Some(_a) => {}
-                        None => {
-                            newly_added.insert(adjacent_point);
-                            node_edges.push(1);
-                        }
-                    }
-                }
-            }
-        }
-        (distance_matrix, node_edges.iter().sum())
-    }
-
-    pub fn get_metrics_for_player(&mut self, player_id: u8) -> ([[i32; 16]; 16], u32) {
-        let position = self.player_position[player_id as usize];
-        self.get_metrics(position)
     }
 
     // Executes a move (expects a legal move)
     pub fn execute_move(&mut self, next_move: Move, player_id: u8, reverse: bool) {
+        //writeln!(&mut stderr(), "simulate move {} to {:?} (r:{}) {:?}", player_id, next_move, reverse, self.b).expect("Stderr problem");
         let all_moves = vec![Move::Up, Move::Down, Move::Right, Move::Left];
         let player = self.player_position[player_id as usize];
         let delta = self.move_to_position(next_move, player_id, reverse);
 
+        let mut points_to_update = HashSet::new();
+
         for direction_move in &all_moves {
-            let point_to_update = self.move_to_position(*direction_move, player_id, reverse);
-            self.get_adjacent(point_to_update, false);
+            points_to_update.insert(self.move_to_position(*direction_move, player_id, reverse));
         }
 
         if reverse {
@@ -266,57 +298,18 @@ impl Board {
         self.player_position[player_id as usize] = delta;
 
         for direction_move in &all_moves {
-            let point_to_update = self.move_to_position(*direction_move, player_id, reverse);
+            points_to_update.insert(self.move_to_position(*direction_move, player_id, reverse));
+        }
+
+        for point_to_update in points_to_update {
             self.get_adjacent(point_to_update, false);
         }
     }
 
-    pub fn get_score(&mut self, player_id: u8, endgame_mode : bool) -> (f64, bool) {
-        let my_score_tuple: ([[i32; 16]; 16], u32) = self.get_metrics_for_player(player_id);
-        let my_distances = my_score_tuple.0;
-        let enemy_id = (player_id + 1) % 2;
-        let enemy_score_tuple : ([[i32; 16]; 16], u32) = self.get_metrics_for_player(enemy_id);
-        let enemy_distances = enemy_score_tuple.0;
-        if endgame_mode {
-            return ((my_score_tuple.1) as f64, false)
-        }
-
-        let mut my_score = 0.0;
-
-        let mut we_can_meet = false;
-
-        for col in 0..16 {
-            for row in 0..16 {
-                let adjacent_points = self.adjacents.get(&(col as u8, row as u8));
-                let mut cell_value = 1.0;
-                match adjacent_points {
-                    Some(points) => {
-                        if points.len() > 2 {
-                            cell_value += 0.1;
-                        }
-                    }
-                    None => {}
-                }
-
-                if my_distances[col][row] == BLOCKED_VALUE || enemy_distances[col][row] == BLOCKED_VALUE {
-                    cell_value += 0.1;
-                }
-
-                if my_distances[col][row] < enemy_distances[col][row] {
-                    my_score += cell_value;
-                } else if my_distances[col][row] > enemy_distances[col][row]{
-                    my_score -= cell_value;
-                }
-
-                if we_can_meet == false && my_distances[col][row] < BLOCKED_VALUE && enemy_distances[col][row] < BLOCKED_VALUE {
-                    we_can_meet = true;
-                }
-            }
-        }
-        (my_score, we_can_meet)
+    pub fn get_score(&mut self, player_id: u8) -> f64 {
+        return self.get_territory(player_id, false) as f64;
     }
 }
-
 
 
 impl<'a> From<&'a str> for Board {
@@ -326,6 +319,9 @@ impl<'a> From<&'a str> for Board {
         let mut b = [[Cell::Empty; 16]; 16];
         let adjacents = HashMap::new();
         let mut player_position = [(0, 0); 2];
+
+        //let sit = ".,.,.,.,.,.,.,x,x,x,x,x,x,x,x,x,.,x,x,.,x,x,.,x,x,.,.,x,x,.,x,x,.,x,x,0,x,x,x,.,x,.,.,x,x,x,x,x,.,x,x,.,x,.,x,.,x,.,.,x,.,x,.,x,x,x,x,.,x,.,x,.,x,.,.,x,x,x,x,x,x,x,x,x,x,.,x,.,x,.,.,x,x,.,x,x,x,x,x,x,x,.,x,.,x,.,.,x,x,.,.,x,x,x,x,x,x,.,x,.,x,.,.,x,x,x,x,x,x,x,x,x,.,.,x,.,x,.,x,x,.,x,x,x,x,x,x,x,.,.,x,.,x,.,x,x,x,1,x,x,x,x,x,x,.,.,x,.,x,.,.,x,x,.,x,x,x,x,x,x,.,.,x,.,x,.,.,x,.,.,x,x,x,x,x,x,.,x,x,.,x,x,x,x,x,x,x,x,x,x,x,x,.,.,.,.,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,.,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x";
+
         for c in text.split(',') {
             match c {
                 "." => b[row as usize][col as usize] = Cell::Empty,
@@ -355,6 +351,7 @@ impl<'a> From<&'a str> for Board {
             desired_depth: 8,
             turn: 0,
             score_options: vec![],
+            transposition_table: HashMap::new(),
         }
     }
 }
