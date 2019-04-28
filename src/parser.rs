@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 pub struct Parser<T: Bot> {
 	bot: T,
+	board : Board,
 }
 
 impl<T: Bot> Parser<T> {
@@ -46,7 +47,7 @@ impl<T: Bot> Parser<T> {
 	fn handle_update(&mut self, command: &Vec<&str>) {
 		match command[2] {
 			"round" => self.bot.update_round(command[3].parse::<u8>().unwrap()),
-			"field" => self.bot.update_board(Board::from(command[3])),
+			"field" => self.bot.update_board(command[3]),
 			_ => panic!(),
 		}
 	}
@@ -77,7 +78,7 @@ impl<T: Bot> Parser<T> {
 
 impl<T: Bot> From<T> for Parser<T> {
 	fn from(bot: T) -> Self {
-		Parser { bot: bot }
+		Parser { bot: bot, board: Board::new() }
 	}
 }
 

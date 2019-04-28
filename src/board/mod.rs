@@ -25,18 +25,24 @@ pub enum Cell {
 }
 
 impl Board {
+    pub fn new() -> Self {
+        Board {
+            b : [[Cell::Empty; 16]; 16],
+            player_position: [(0, 0); 2],
+            adjacents : HashMap::new(),
+            best_turn: Move::Up,
+            desired_depth: 8,
+            turn: 0,
+            score_options: vec![],
+            transposition_table: HashMap::new(),
+        }
+    }
+
     pub fn get_best_turn(&self) -> Move {
         self.best_turn
     }
     pub fn set_best_turn(&mut self, turn: Move) {
         self.best_turn = turn;
-    }
-
-    pub fn get_transpositions(&self) -> HashMap<[[Cell; 16]; 16], f64> {
-        self.transposition_table.clone()
-    }
-    pub fn set_transpositions(&mut self, trans: HashMap<[[Cell; 16]; 16], f64>) {
-        self.transposition_table = trans;
     }
 
     pub fn get_score_options(&self) -> Vec<(Move, f64)> {
@@ -178,7 +184,13 @@ impl Board {
                 if score_matrix[point.0 as usize][point.1 as usize] == 0.0 {
                     let adjacent_to_point: HashSet<(u8, u8)> = self.get_adjacent(*point, true);
                     let neighbour_count = adjacent_to_point.len();
-                    let point_score = -1.0 - (neighbour_count - 2) * 0.05;
+                    let mut point_score : f64 = -1.0;
+                    match neighbour_count {
+                        2 => point_score = -1.0,
+                        3 => point_score = -1.05,
+                        4 => point_score = -1.1,
+                        _ => (),
+                    }
                     score_matrix[point.0 as usize][point.1 as usize] = point_score;
                     for adjacent_point in adjacent_to_point {
                         if score_matrix[adjacent_point.0 as usize][adjacent_point.1 as usize] == 0.0 {
@@ -195,7 +207,13 @@ impl Board {
                 if score_matrix[point.0 as usize][point.1 as usize] == 0.0 {
                     let adjacent_to_point: HashSet<(u8, u8)> = self.get_adjacent(*point, true);
                     let neighbour_count = adjacent_to_point.len();
-                    let point_score = 1.0 + (neighbour_count - 2) * 0.05;
+                    let mut point_score : f64 = 1.0;
+                    match neighbour_count {
+                        2 => point_score = 1.0,
+                        3 => point_score = 1.05,
+                        4 => point_score = 1.1,
+                        _ => (),
+                    }
                     score_matrix[point.0 as usize][point.1 as usize] = point_score;
 
                     for adjacent_point in adjacent_to_point {
@@ -309,30 +327,22 @@ impl Board {
     pub fn get_score(&mut self, player_id: u8) -> f64 {
         return self.get_territory(player_id, false) as f64;
     }
-}
 
-
-impl<'a> From<&'a str> for Board {
-    fn from(text: &'a str) -> Board {
+    pub fn update(&mut self, text: &str) {
         let mut row = 0;
         let mut col = 0;
-        let mut b = [[Cell::Empty; 16]; 16];
-        let adjacents = HashMap::new();
-        let mut player_position = [(0, 0); 2];
-
-        //let sit = ".,.,.,.,.,.,.,x,x,x,x,x,x,x,x,x,.,x,x,.,x,x,.,x,x,.,.,x,x,.,x,x,.,x,x,0,x,x,x,.,x,.,.,x,x,x,x,x,.,x,x,.,x,.,x,.,x,.,.,x,.,x,.,x,x,x,x,.,x,.,x,.,x,.,.,x,x,x,x,x,x,x,x,x,x,.,x,.,x,.,.,x,x,.,x,x,x,x,x,x,x,.,x,.,x,.,.,x,x,.,.,x,x,x,x,x,x,.,x,.,x,.,.,x,x,x,x,x,x,x,x,x,.,.,x,.,x,.,x,x,.,x,x,x,x,x,x,x,.,.,x,.,x,.,x,x,x,1,x,x,x,x,x,x,.,.,x,.,x,.,.,x,x,.,x,x,x,x,x,x,.,.,x,.,x,.,.,x,.,.,x,x,x,x,x,x,.,x,x,.,x,x,x,x,x,x,x,x,x,x,x,x,.,.,.,.,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,.,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x";
 
         for c in text.split(',') {
             match c {
-                "." => b[row as usize][col as usize] = Cell::Empty,
-                "x" => b[row as usize][col as usize] = Cell::Wall,
+                "." => self.b[row as usize][col as usize] = Cell::Empty,
+                "x" => self.b[row as usize][col as usize] = Cell::Wall,
                 "0" => {
-                    b[row as usize][col as usize] = Cell::Player0;
-                    player_position[0] = (row, col);
+                    self.b[row as usize][col as usize] = Cell::Player0;
+                    self.player_position[0] = (row, col);
                 }
                 "1" => {
-                    b[row as usize][col as usize] = Cell::Player1;
-                    player_position[1] = (row, col);
+                    self.b[row as usize][col as usize] = Cell::Player1;
+                    self.player_position[1] = (row, col);
                 }
                 _ => unimplemented!(),
             }
@@ -342,19 +352,9 @@ impl<'a> From<&'a str> for Board {
                 row += 1;
             }
         }
-
-        Board {
-            b,
-            player_position,
-            adjacents,
-            best_turn: Move::Up,
-            desired_depth: 8,
-            turn: 0,
-            score_options: vec![],
-            transposition_table: HashMap::new(),
-        }
     }
 }
+
 
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

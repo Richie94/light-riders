@@ -1,41 +1,38 @@
-use board::{Board, Cell};
+use board::{Board};
 use bot::Bot;
 use std::time::*;
 use types::*;
 use std::io::{stderr, Write};
-use std::collections::HashMap;
 
 pub struct RichardBot {
-    board: Option<Board>,
+    pub board: Board,
     id: u8,
     round: u8,
     min_depth: u8,
     current_depth: u8,
     max_depth: u8,
-    timebank: Duration,
-    transposition_table: HashMap<[[Cell; 16]; 16], f64>
+    timebank: Duration
 }
 
 impl RichardBot {
     pub fn new() -> Self {
         RichardBot {
-            board: None,
+            board: Board::new(),
             id: 0,
             round: 0,
             min_depth: 5,
             current_depth: 8,
             max_depth: 20,
-            timebank: Duration::from_millis(0),
-            transposition_table: HashMap::new()
+            timebank: Duration::from_millis(0)
         }
     }
 
     pub fn make_move_to_middle(&mut self) -> Move {
-        let mut legal_moves = self.board.as_mut().unwrap().legal_moves(self.id);
+        let mut legal_moves = self.board.legal_moves(self.id);
 
         legal_moves.sort_by(|a, b| {
-            let position_a = self.board.as_mut().unwrap().move_to_position(*a, self.id, false);
-            let position_b = self.board.as_mut().unwrap().move_to_position(*b, self.id, false);
+            let position_a = self.board.move_to_position(*a, self.id, false);
+            let position_b = self.board.move_to_position(*b, self.id, false);
 
             let dist_a_to_enemy = ((position_a.0 - 8) as i8).abs() +
                 ((position_a.1 - 8) as i8).abs();
@@ -51,23 +48,21 @@ impl RichardBot {
 
 impl Bot for RichardBot {
     fn get_move(&mut self, time_to_move: Duration) -> Move {
+
         self.timebank = time_to_move;
         let before = Instant::now();
         self.round += 1;
         if self.round < 3 {
             self.make_move_to_middle()
         } else {
-            let board = self.board.as_mut().unwrap();
-
-            board.reset_score_options();
-            board.set_best_turn(Move::Pass);
-            board.set_transpositions(self.transposition_table.clone());
+            self.board.reset_score_options();
+            self.board.set_best_turn(Move::Pass);
             writeln!(&mut stderr(), "=== ROUND {} ===", self.round).expect("Stderr problem");
-            board.get_territory(self.id, true);
-            board.set_desired_depth(self.current_depth);
-            board.mini_max(self.id, self.current_depth);
+            self.board.get_territory(self.id, true);
+            self.board.set_desired_depth(self.current_depth);
+            self.board.mini_max(self.id, self.current_depth);
 
-            writeln!(&mut stderr(), "Score Options: {:?}", board.get_score_options()).expect("Stderr problem");
+            writeln!(&mut stderr(), "Score Options: {:?}", self.board.get_score_options()).expect("Stderr problem");
 
             let elapsed = before.elapsed().as_millis();
             writeln!(&mut stderr(), "Elapsed {}, Timebank {:?}", elapsed, self.timebank).expect("Stderr problem");
@@ -84,9 +79,7 @@ impl Bot for RichardBot {
                     }
                 }
             }
-            board.set_desired_depth(self.current_depth);
-            self.transposition_table = board.get_transpositions();
-            board.get_best_turn()
+            self.board.get_best_turn()
         }
     }
 
@@ -95,8 +88,8 @@ impl Bot for RichardBot {
         self.round = round;
     }
 
-    fn update_board(&mut self, board: Board) {
-        self.board = Some(board);
+    fn update_board(&mut self, text: &str) {
+        self.board.update(text);
     }
 
     fn set_setting(&mut self, setting: Setting) {
